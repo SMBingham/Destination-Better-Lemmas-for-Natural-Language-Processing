@@ -1,0 +1,58 @@
+# Project: Improving NLTK's Lemmatization Process
+
+Submitted by Shannon Bingham
+February 2019
+
+## Development Notes.
+This document provides details about my efforts to improve the NLTK/WordNet lemmatization process.  Here, I lay out my reasons for each change and give details about its technical implementation.  
+
+### Overview.
+For this project, I made six updates to the NLTK lemmatization process.  Because the NLTK interface to WordNet is so widely used, my plan was to design updates that were fully backward compatible.
+
+My driving questions:
+
+- If x% of words in written English make up a large y% of corpora, can we leverage that understanding prior to feature selection and modeling?
+- How can I improve my NLP input data?
+- New words are added to English fairly often these days.  How can we keep our NLP models current?
+
+#### 1.  New:  optional ability for users to provide words that need no lemmatization.
+As a former reading teacher, I am well aware that some words occur much more frequently in written text than others.  In researching this idea, I started with my copy of _The Reading Teacher's Book Of Lists: Grades K-12_, downloaded a copy of the 1000 most frequently occuring words list I found on the Internet, and ran the words through both the NLTK Wordnet lemmatizer and the Oxford Dictionary Lemmatron ([available via an API] (https://developer.oxforddictionaries.com/documentation)).  What I was surprised to find was that 80% of those high-frequency words were their own best lemmas. With that understanding, the original idea to "fast track" high frequency words morphed into a goal of immediate turnaround.
+
+**New file and parameter (on instantiation): snapwords**
+Description:  Simple text file with one word per line.
+Processing:  Users request snap processing by providing a list of snapwords during instantiation of the lemmatizer.  During init processing, the snapwords are stored as a set.  Checking to see whether a word is in the snapwords set happens very early during lemmatization.  If found, the word is "snapped" back to the calling program and there's nothing else to do.
+
+
+#### 2.  New:  optional ability for users to provide a dictionary of words with their preferred lemmas.
+The primary rationale for providing local dictionary support is to provide a way for users to improve upon what the lemmatizer does normally.  Today, we use tools like regex or a tokenizer to prep our data for lemmatization, but we have no simple doorway into the process.  Users with domain-specific vocabulary would certainly benefit, as would anyone who sees a need to preempt the lemmatizer.
+
+**New file and parameter (on instantiation): local_dictionary**
+Description:  Simple text file.  The text is stored as strings and turned into a dictionary entries during the read routine.  Because words can have different lemma depending on the part of speech, the dictionary key is an encoded string that contains the word and the part of speech for which the lemma should be applied.  There is an ability for a 'global' lemma, but if user needs different lemma depending on the part of speech, there will need to be multiple lines in the file.
+Processing:  Processing for this file is trickier than what happens for snapwords.  Efficiency was a main concern since software update #4 makes it possible for multiple searches of the dictionary to occur.
+
+
+#### 3.  New:  optional ability for users to trigger the lemmatizer to cache the words and lemmas it already looked up in WordNet.
+It seems safe to assume that (within a corpus, certainly) if a word is looked up once on WordNet, it is likely to need to be looked up again later.  Saving the results of each WordNet search should result in improved performance, especially for larger datasets.
+
+**New parameter (on instantiation): remember_words boolean**
+Description:  parameter
+Processing:  In addition to be used as a search area, the word memory is updated each time a word is looked up in WordNet.  It has the same key structure as the local dictionary, but because every call to WordNet has a part of speech, there is no "global" lemma feature with this file.
+
+#### 4.  New:  optional ability for users to override Lemmatizer default processing (i.e. when no part of speech supplied on call).
+Currently, users can set the pos= parameter tag to instruct the lemmatizer to use a specific part of speech.  But I wonder how many users have their data tagged.  My guess is that plenty of folks go straight from tokenization to lemmatization without part of speech tags.  It is well documented what happens in these cases:  the lemmatizer assigns NOUN.  My research and experimentation indicate that this can be especially impactful on verbs.  This software change is intended to (optionally) go above and beyond what Lemmitizer does when a part of speech is not provided.
+
+**New parameter (on lemmatization): multiple_pos_call list**
+Description:  This change gives users the ability to provide a part of speech sequence for the lemmatizer to follow when pos= is not provided.  In other words, the lemmatizer can try more than one part of speech and will stop when it finds a lemma.  For example, a user could set multiple_pos_call=['v', 'a', 'r', 'n'] to start with verb processing and try the other parts of speech until it finds a lemma.  Obviously this ia a much more computationally expensive approach (but perhaps less than running a tagger beforehand).  Using snapwords, a local_dictionary, and remember_words help mitigate the extra load.  Depending on the input, the results could look very different.
+
+#### 5.  New:  optional ability for users get metrics.
+During testing, I really needed to know how the new caching processing was going.  I wanted to know how many word lookups were happening in the cached areas, so I added a formatted table to the lemmatizer.  I decided to leave that in because it might be useful to others.  The table can be printed using the parameter.  No WordNet processing when the report is requested.
+
+**New parameter (on lemmatization): print_results boolean list**
+Description:  A formatted table can be printed using the parameter.  No WordNet processing when the report is requested. The thinking behind the report is to run it at the end after all lemmatizing is complete.
+
+#### 6.  Modified:  force exceptions to be returned
+Interestingly, multiple lemmas are sometimes generated by the WordNet interface.  The primary time this occurs is as a word is stripped of its suffixes.  Stripping occurs in a loop, and everytime a letter or group of letters is stripped/replaced, the resulting fragment is checked to see if it's a lemma.  Sometimes the original word is also considered a lemma.  Later, upon receiving a list of possible lemmas from the interface, the lemmatizer chooses the shortest one.  This is why the lemmatizer returns 'a' when the original word was 'as' and 'le' when the original word was 'less' (and when the lemmatizer considers the words as nouns).
+
+There's no good reason to try to change that code right now.  It's been that way for a very long time, I imagine.  But, in my testing, I noticed that same problem occurring for a specific word in the noun exception file.  For nouns, the exception file contains a lot of irregular plural nouns and their singular form.  Turns out that it is not always true that the singular form of an irregular plural noun is shorter and, when both the words are considered lemmas, the interface makes a choice.  Because this was a simple change, I went ahead and made it, despite my initial goal to make everything fully backward compatible.
+
+**No change for the user except they might get back different results**

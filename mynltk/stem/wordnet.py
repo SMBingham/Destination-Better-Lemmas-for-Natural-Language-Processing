@@ -67,7 +67,7 @@ class WordNetLemmatizer(object):
             data_template  = '{:<20s}{:>10d}{:>10d}{:>8.2f}'
             total_template = '{:<20s}{:>20d}'
             print(dash)
-            print(hdr_template.format('Type','Number','Hits','%'))
+            print(hdr_template.format('Type','Number','Hits','% Total'))
             print(dash)
             print(data_template.format('snapwords',
                 len(self._snap_words),
@@ -81,6 +81,10 @@ class WordNetLemmatizer(object):
                 len(self._word_memory),
                 self._memory_count,
                 100 * round(self._memory_count / self._call_count, 3)))
+            print(data_template.format('* not cached *',
+                0,
+                len(self._word_memory),
+                100 * round(len(self._word_memory) / self._call_count, 3)))
             print()
             print(total_template.format('Total', self._call_count))
 
